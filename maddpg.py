@@ -135,7 +135,7 @@ class DDPGAgent():
         self.train_steps = 0
 
         # noise 
-        self.noise = OUNoise(action_size, 100, sigma=hparam['SIGMA'], theta=hparam['THETA'])       
+        self.noise = OUNoise(actor_action_size, 100, sigma=hparam['SIGMA'], theta=hparam['THETA'])       
 
         # Actor
         self.actor_local = Actor(actor_state_size, actor_action_size, scale=hparam["OUT_SCALE"],
@@ -180,11 +180,11 @@ class DDPGAgent():
         # set the NN to not train 
         self.actor_local.eval()
         with torch.no_grad():
-            actions = self.actor_local(states).cpu().detach().numpy() + self.noise.sample() # add noise to enforce exploration
+            actions = self.actor_local(states.reshape(1,-1)).cpu().detach().numpy() + self.noise.sample() # add noise to enforce exploration
         # set the NN again to train
         self.actor_local.train()
         
-        return actions
+        return np.clip(actions, -1, 1)
 
 
     def learn(self, all_local_actions, all_target_next_actions, all_agent_experiences, rewards, dones):

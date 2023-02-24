@@ -75,7 +75,7 @@ if __name__ == "__main__":
     print(f"agents = {num_agents} . Action space: {action_size} observation space: {state_size}")
     agent = MADDPGAgent(state_size, action_size, num_agents, device=device, **params)
 
-    scores = train_loop(brain_name, env, agent, max_t=1000, goal=0.51, running_average=20, **params)
+    scores = train_loop(brain_name, env, agent, max_t=1000, goal=0.5, running_average=100, **params)
 
     # Plot Statistics (Global scores and averaged scores)
     plt.subplot(2, 1, 2)
