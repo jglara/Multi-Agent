@@ -1,5 +1,5 @@
 parameters:
-        BUFFER_SIZE : 12000     # replay buffer size.
+        BUFFER_SIZE : 120000     # replay buffer size.
         BATCH_SIZE : 256         # minibatch size
         GAMMA : 0.99             # discount factor
         TAU : 0.01               # for soft update of target parameters

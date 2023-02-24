@@ -48,6 +48,11 @@ class ReplayBuffer:
         """Return the current size of internal memory."""
         return len(self.memory)
 
+
+def init_weights(m):
+    if type(m) == nn.Linear:
+        torch.nn.init.xavier_uniform_(m.weight)
+
 class Actor(nn.Module):
     def __init__(self, obs_size: int, act_size: int, scale: float, hidden_1: int, hidden_2: int, hidden_3: int):
         super().__init__()
@@ -56,6 +61,8 @@ class Actor(nn.Module):
                                    nn.Linear(hidden_1, hidden_2), nn.SELU(),
                                    nn.Linear(hidden_2, hidden_3), nn.SELU(),
                                    nn.Linear(hidden_3,act_size), nn.Tanh())
+
+        self.model.apply(init_weights)
         
 
     def forward(self, s: tensor) -> tensor:
@@ -71,10 +78,15 @@ class Critic(nn.Module):
         super().__init__()
         self.obs_net   = nn.Sequential(nn.Linear(obs_size, obs_hidden_1), nn.SELU(), nn.BatchNorm1d(obs_hidden_1))        
         self.a_net = nn.Sequential(nn.Linear(act_size, act_hidden_1), nn.SELU(), nn.BatchNorm1d(act_hidden_1))
-        
+       
         self.q_net = nn.Sequential(nn.Linear(obs_hidden_1+act_hidden_1, hidden_2), nn.SELU(),nn.BatchNorm1d(hidden_2),   
                                    nn.Linear(hidden_2, hidden_3), nn.SELU(),
-                                   nn.Linear(hidden_3, 1))        
+                                   nn.Linear(hidden_3, 1))
+
+
+        self.obs_net.apply(init_weights)
+        self.a_net.apply(init_weights)
+        self.q_net.apply(init_weights)
 
     def forward(self, s: tensor, a: tensor) -> tensor:
         """

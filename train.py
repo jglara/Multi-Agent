@@ -44,6 +44,7 @@ def train_loop(brain_name, env, agent, n_episodes=2000, max_t=2000, goal=0.51, r
 
             states = next_states
 
+        writer.add_scalar('episode length', i, i_episode)
         for i in range(num_agents):
             writer.add_scalar(f'rewards/{i}', scores[i], i_episode)
 
@@ -86,7 +87,7 @@ if __name__ == "__main__":
     agent = MADDPGAgent(state_size, action_size, num_agents, device=device, **params)
     max_t=2000
 
-    scores = train_loop(brain_name, env, agent, max_t=2000, goal=0.51, running_average=100, **params)
+    scores = train_loop(brain_name, env, agent, max_t=5000, goal=0.51, running_average=100, **params)
 
 
     # Plot Statistics (Global scores and averaged scores)
