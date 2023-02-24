@@ -25,12 +25,9 @@ class ReplayBuffer:
         self.batch_size = batch_size
         self.device = device
     
-    def add(self, states, actions, rewards, next_states, dones):
+    def add(self, s, a, r, sp, d):
         """Add a new experience to memory."""
-
-        for s,a,r,sp,d in zip(states, actions, rewards, next_states, dones):
-            self.memory.append([s, a, r, sp, d ])    
-
+        self.memory.append([s, a, r, sp, d ])
 
     def sample(self):
         """Randomly sample a batch of experiences from memory."""
@@ -52,12 +49,13 @@ class ReplayBuffer:
         return len(self.memory)
 
 class Actor(nn.Module):
-    def __init__(self, obs_size: int, act_size: int, scale: float, hidden_1: int, hidden_2: int):
+    def __init__(self, obs_size: int, act_size: int, scale: float, hidden_1: int, hidden_2: int, hidden_3: int):
         super().__init__()
         self.output_scale_factor = scale
-        self.model = nn.Sequential(nn.Linear(obs_size, hidden_1), nn.ReLU(),
-                                   nn.Linear(hidden_1, hidden_2), nn.ReLU(),
-                                   nn.Linear(hidden_2,act_size), nn.Tanh())
+        self.model = nn.Sequential(nn.Linear(obs_size, hidden_1), nn.SELU(), nn.BatchNorm1d(hidden_1),
+                                   nn.Linear(hidden_1, hidden_2), nn.SELU(),
+                                   nn.Linear(hidden_2, hidden_3), nn.SELU(),
+                                   nn.Linear(hidden_3,act_size), nn.Tanh())
         
 
     def forward(self, s: tensor) -> tensor:
@@ -71,11 +69,11 @@ class Actor(nn.Module):
 class Critic(nn.Module):
     def __init__(self, obs_size: int, act_size: int, obs_hidden_1: int, act_hidden_1: int, hidden_2: int, hidden_3: int):
         super().__init__()
-        self.obs_net   = nn.Sequential(nn.Linear(obs_size, obs_hidden_1), nn.ReLU())        
-        self.a_net = nn.Sequential(nn.Linear(act_size, act_hidden_1), nn.ReLU())
+        self.obs_net   = nn.Sequential(nn.Linear(obs_size, obs_hidden_1), nn.SELU(), nn.BatchNorm1d(obs_hidden_1))        
+        self.a_net = nn.Sequential(nn.Linear(act_size, act_hidden_1), nn.SELU(), nn.BatchNorm1d(act_hidden_1))
         
-        self.q_net = nn.Sequential(nn.Linear(obs_hidden_1+act_hidden_1, hidden_2), nn.ReLU(),
-                                   nn.Linear(hidden_2, hidden_3), nn.ReLU(),
+        self.q_net = nn.Sequential(nn.Linear(obs_hidden_1+act_hidden_1, hidden_2), nn.SELU(),nn.BatchNorm1d(hidden_2),   
+                                   nn.Linear(hidden_2, hidden_3), nn.SELU(),
                                    nn.Linear(hidden_3, 1))        
 
     def forward(self, s: tensor, a: tensor) -> tensor:
@@ -113,7 +111,7 @@ class OUNoise:
 class DDPGAgent():
     """DDPG Agent implementation"""
 
-    def __init__(self, actor_state_size, actor_action_size, critic_state_size, critic_action_size, device, **hparam):
+    def __init__(self, agent_id, actor_state_size, actor_action_size, critic_state_size, critic_action_size, device, **hparam):
         """Initialize an Agent object.
         
         Params
@@ -126,6 +124,7 @@ class DDPGAgent():
             hparam: dictionary with hyper parameters
            
         """
+        self.agent_id = agent_id # for logs purposes
         self.actor_state_size = actor_state_size
         self.actor_action_size = actor_action_size
         self.critic_state_size = critic_state_size
@@ -139,9 +138,9 @@ class DDPGAgent():
 
         # Actor
         self.actor_local = Actor(actor_state_size, actor_action_size, scale=hparam["OUT_SCALE"],
-                                 hidden_1=hparam["ACTOR_HIDDEN_1"], hidden_2=hparam["ACTOR_HIDDEN_2"]).to(device)
+                                 hidden_1=hparam["ACTOR_HIDDEN_1"], hidden_2=hparam["ACTOR_HIDDEN_2"], hidden_3=hparam["ACTOR_HIDDEN_3"]).to(device)
         self.actor_target = Actor(actor_state_size, actor_action_size, scale=hparam["OUT_SCALE"],
-                                  hidden_1=hparam["ACTOR_HIDDEN_1"], hidden_2=hparam["ACTOR_HIDDEN_2"]).to(device)        
+                                  hidden_1=hparam["ACTOR_HIDDEN_1"], hidden_2=hparam["ACTOR_HIDDEN_2"], hidden_3=hparam["ACTOR_HIDDEN_3"]).to(device)        
         self.actor_target.load_state_dict( self.actor_local.state_dict())
         self.actor_optimizer = optim.Adam(self.actor_local.parameters(), lr=hparam["ACTOR_LR"])
 
@@ -156,17 +155,8 @@ class DDPGAgent():
         self.critic_optimizer = optim.Adam(self.critic_local.parameters(), lr=hparam["CRITIC_LR"])
         
 
-        # Replay memory
-        self.memory = ReplayBuffer(hparam["BUFFER_SIZE"], hparam["BATCH_SIZE"], device)
-
-    
-    def step(self, states, actions, rewards, next_states, dones):
-        """
-        Update the Agent with the next step from the environment
-        """        
-        # Save experience in replay memory
-        self.memory.add(states, actions, rewards, next_states, dones)
-
+    def setWriter(self, writer):
+        self.writer = writer
 
     def act(self, states):
         """Returns actions for given state as per current policy.
@@ -180,33 +170,36 @@ class DDPGAgent():
         # set the NN to not train 
         self.actor_local.eval()
         with torch.no_grad():
-            actions = self.actor_local(states.reshape(1,-1)).cpu().detach().numpy() + self.noise.sample() # add noise to enforce exploration
+            actions = self.actor_local(states).cpu().detach().numpy() + self.noise.sample() # add noise to enforce exploration
         # set the NN again to train
         self.actor_local.train()
         
         return np.clip(actions, -1, 1)
 
 
-    def learn(self, all_local_actions, all_target_next_actions, all_agent_experiences, rewards, dones):
+    def learn(self, all_local_actions, all_target_next_actions, all_states, all_actions, all_next_states, rewards, dones):
         """Update value parameters using batch of experiences
 
         """
         gamma = self.hparam["GAMMA"]
-        all_states, all_actions, _, all_next_states, _ = all_agent_experiences
 
         ## compute and minimize the critic loss
         target = rewards + gamma * self.critic_target(all_next_states, all_target_next_actions) * (1 - dones)
         critic_loss = F.smooth_l1_loss(self.critic_local(all_states,all_actions), target.detach())
         self.critic_optimizer.zero_grad()
         critic_loss.backward()
+        # critic clipping gradiant
+        torch.nn.utils.clip_grad_norm_(self.critic_local.parameters(), 1)
         self.critic_optimizer.step()
+        self.writer.add_scalar(f'critic_loss/{self.agent_id}', critic_loss, self.train_steps)
 
         # Compute a minimize actor loss
         # all_local_actions is self.actor_local(single_states)
         actor_loss = -self.critic_local(all_states, all_local_actions).mean()
         self.actor_optimizer.zero_grad()
         actor_loss.backward()
-        self.actor_optimizer.step()        
+        self.actor_optimizer.step()
+        self.writer.add_scalar(f'actor_loss/{self.agent_id}', actor_loss, self.train_steps)
 
         # ------------------- update target network ------------------- #
         self.soft_update(self.actor_local, self.actor_target, self.hparam["TAU"])
@@ -229,24 +222,34 @@ class DDPGAgent():
 
 class MADDPGAgent():
     def __init__(self, state_size, action_size, num_agents, device, **hparam):
-        self.agents = [ DDPGAgent(state_size, action_size, num_agents * state_size, num_agents * action_size, device, **hparam) for _ in range(num_agents)]
+        self.agents = [ DDPGAgent(i, state_size, action_size, num_agents * state_size, num_agents * action_size, device, **hparam) for i in range(num_agents)]
         # Initialize time step (for updating every UPDATE_EVERY steps)
         self.t_step = 0
-        self.hparam = hparam
+        self.hparam = hparam        
+
+        # Replay memory
+        self.memory = ReplayBuffer(hparam["BUFFER_SIZE"], hparam["BATCH_SIZE"], device)
+
+
+    def setWriter(self, writer):
+        for agent in self.agents:
+            agent.writer = writer
+
+        self.writer = writer
 
     def step(self, states, actions, rewards, next_states, dones):
         """
         Update the Agent with the next step from the environment
         """
-        for i,agent in enumerate(self.agents):
-            agent.step([states[i]], [actions[i]], [rewards[i]], [next_states[i]], [dones[i]])
+        
+        # Save experience in replay memory
+        self.memory.add(states, actions, rewards, next_states, dones)
 
         # Learn every UPDATE_EVERY time steps.
         self.t_step = (self.t_step + 1) % self.hparam["UPDATE_EVERY"]
         if self.t_step == 0:
             # If enough samples are available in memory, get random subset and learn
-            memory_lens = np.array( [len(agent.memory) for agent in self.agents] )
-            if np.all( memory_lens > self.hparam["BATCH_SIZE"]):
+            if  len(self.memory) > self.hparam["BATCH_SIZE"]:
                 for _ in range(self.hparam["K"]):
                     self.learn()
 
@@ -261,8 +264,8 @@ class MADDPGAgent():
         """
         all_actions = []
         for i,agent in enumerate(self.agents):
-            actions = agent.act(all_states[i])
-            all_actions.append(actions)
+            actions = agent.act(all_states[i].reshape(1,-1))
+            all_actions.append(actions)            
             
         return np.hstack(all_actions)
             
@@ -270,32 +273,17 @@ class MADDPGAgent():
         """Update value parameters using batch of experiences
 
         """
-        all_local_actions = []
-        all_target_next_actions = []
-        all_states = []
-        all_actions = []
-        all_rewards = []
-        all_next_states = []
-        all_dones = []
-        
         for agent in self.agents:
-            states, actions, rewards, next_states, dones = agent.memory.sample()
-            
-            local_actions = agent.actor_local(states)
-            target_next_actions = agent.actor_target(next_states)            
-            all_local_actions.append(local_actions)
-            all_target_next_actions.append(target_next_actions)
-            
-            all_states.append(states)
-            all_actions.append(actions)
-            all_rewards.append(rewards)
-            all_next_states.append(next_states)
-            all_dones.append(dones)
-            
+            all_local_actions = []
+            all_target_next_actions = []
+            all_states, all_actions, all_rewards, all_next_states, all_dones = self.memory.sample()
+        
+            for i,ag in enumerate(self.agents):            
+                local_actions = ag.actor_local(all_states[:,i])
+                target_next_actions = ag.actor_target(all_next_states[:,i])
+                all_local_actions.append(local_actions)
+                all_target_next_actions.append(target_next_actions)                        
 
-        all_experiences = torch.cat(all_states, dim=1), torch.cat(all_actions, dim=1), torch.cat(all_rewards, dim=1), torch.cat(all_next_states, dim=1), torch.cat(all_dones, dim=1)
-        # feed each agent with all experiences and all agent actor actions
-        for i,agent in enumerate(self.agents):
-            # detach all actions except the current one, so only that is modified during learning
-            all_local_actions_detached = [actions if j == i else actions.detach() for j,actions in enumerate(all_actions)]
-            agent.learn(torch.cat(all_local_actions_detached, dim=1) , torch.cat(all_target_next_actions, dim=1), all_experiences, all_rewards[i], all_dones[i])
+            batch_size = self.hparam["BATCH_SIZE"]
+            agent.learn(torch.cat(all_local_actions, dim=1) , torch.cat(all_target_next_actions, dim=1),
+                        all_states.reshape(batch_size, -1), all_actions.reshape(batch_size, -1), all_next_states.reshape(batch_size, -1), all_rewards[:,i], all_dones[:,i])
