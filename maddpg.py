@@ -285,17 +285,18 @@ class MADDPGAgent():
         """Update value parameters using batch of experiences
 
         """
-        for agent in self.agents:
+        for j,agent in enumerate(self.agents):
             all_local_actions = []
             all_target_next_actions = []
             all_states, all_actions, all_rewards, all_next_states, all_dones = self.memory.sample()
         
             for i,ag in enumerate(self.agents):            
                 local_actions = ag.actor_local(all_states[:,i])
+                local_actions = local_actions.detach() if i != j else local_actions
                 target_next_actions = ag.actor_target(all_next_states[:,i])
                 all_local_actions.append(local_actions)
                 all_target_next_actions.append(target_next_actions)                        
 
             batch_size = self.hparam["BATCH_SIZE"]
             agent.learn(torch.cat(all_local_actions, dim=1) , torch.cat(all_target_next_actions, dim=1),
-                        all_states.reshape(batch_size, -1), all_actions.reshape(batch_size, -1), all_next_states.reshape(batch_size, -1), all_rewards[:,i], all_dones[:,i])
+                        all_states.reshape(batch_size, -1), all_actions.reshape(batch_size, -1), all_next_states.reshape(batch_size, -1), all_rewards[:,j], all_dones[:,j])

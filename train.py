@@ -58,8 +58,10 @@ def train_loop(brain_name, env, agent, n_episodes=2000, max_t=2000, goal=0.51, r
             print('\rEpisode {} \tAverage Score: {:.2f}\tMax score: {:.2f}'.format(i_episode, np.mean(scores_window), np.max(scores_window)))
         if len(scores_window) >= running_average and np.mean(scores_window)>=goal:
             print('\nEnvironment solved in {:d} episodes!\tAverage Score: {:.2f}\tMax score: {:.2f}'.format(i_episode, np.mean(scores_window), np.max(scores_window)))
-            torch.save(agent.actor_local.state_dict(), "actor.weight")
-            torch.save(agent.critic_local.state_dict(), "critic.weight")
+
+            for i,ag in enumerate(agent.agents):
+                torch.save(ag.actor_local.state_dict(), f"actor{i}.weight")
+                torch.save(ag.critic_local.state_dict(), f"critic{i}.weight")
             break
 
     writer.close()
@@ -87,7 +89,7 @@ if __name__ == "__main__":
     agent = MADDPGAgent(state_size, action_size, num_agents, device=device, **params)
     max_t=2000
 
-    scores = train_loop(brain_name, env, agent, max_t=5000, goal=0.51, running_average=100, **params)
+    scores = train_loop(brain_name, env, agent, n_episodes=5000, max_t=5000, goal=0.51, running_average=100, **params)
 
 
     # Plot Statistics (Global scores and averaged scores)
