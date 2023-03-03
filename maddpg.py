@@ -74,18 +74,16 @@ class Actor(nn.Module):
 
     
 class Critic(nn.Module):
-    def __init__(self, obs_size: int, act_size: int, obs_hidden_1: int, act_hidden_1: int, hidden_2: int, hidden_3: int):
+    def __init__(self, obs_size: int, act_size: int, obs_hidden_1: int, hidden_2: int, hidden_3: int):
         super().__init__()
         self.obs_net   = nn.Sequential(nn.Linear(obs_size, obs_hidden_1), nn.SELU(), nn.BatchNorm1d(obs_hidden_1))        
-        self.a_net = nn.Sequential(nn.Linear(act_size, act_hidden_1), nn.SELU(), nn.BatchNorm1d(act_hidden_1))
        
-        self.q_net = nn.Sequential(nn.Linear(obs_hidden_1+act_hidden_1, hidden_2), nn.SELU(),nn.BatchNorm1d(hidden_2),   
+        self.q_net = nn.Sequential(nn.Linear(obs_hidden_1+act_size, hidden_2), nn.SELU(),nn.BatchNorm1d(hidden_2),   
                                    nn.Linear(hidden_2, hidden_3), nn.SELU(),
                                    nn.Linear(hidden_3, 1))
 
 
         self.obs_net.apply(init_weights)
-        self.a_net.apply(init_weights)
         self.q_net.apply(init_weights)
 
     def forward(self, s: tensor, a: tensor) -> tensor:
@@ -93,8 +91,7 @@ class Critic(nn.Module):
         Returns a tuple with deterministic continuous action to take
         """
         x_obs = self.obs_net(s)
-        x_act = self.a_net(a)
-        x = self.q_net(torch.cat([x_obs,x_act], dim=1))
+        x = self.q_net(torch.cat([x_obs,a], dim=1))
         return x
     
 
@@ -158,10 +155,10 @@ class DDPGAgent():
 
         # Critic
         self.critic_local = Critic(critic_state_size, critic_action_size,
-                                   obs_hidden_1=hparam["CRITIC_OBS_HIDDEN_1"], act_hidden_1=hparam["CRITIC_ACT_HIDDEN_1"], 
+                                   obs_hidden_1=hparam["CRITIC_OBS_HIDDEN_1"], 
                                    hidden_2=hparam["CRITIC_HIDDEN_2"], hidden_3=hparam["CRITIC_HIDDEN_3"]).to(device)
         self.critic_target = Critic(critic_state_size, critic_action_size,
-                                    obs_hidden_1=hparam["CRITIC_OBS_HIDDEN_1"], act_hidden_1=hparam["CRITIC_ACT_HIDDEN_1"], 
+                                    obs_hidden_1=hparam["CRITIC_OBS_HIDDEN_1"],
                                     hidden_2=hparam["CRITIC_HIDDEN_2"], hidden_3=hparam["CRITIC_HIDDEN_3"]).to(device)
         self.critic_target.load_state_dict( self.critic_local.state_dict())
         self.critic_optimizer = optim.Adam(self.critic_local.parameters(), lr=hparam["CRITIC_LR"])

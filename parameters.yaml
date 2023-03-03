@@ -9,7 +9,6 @@ parameters:
         ACTOR_HIDDEN_3: 32       # Number of features of hidden layer 3 of Actor NN
         CRITIC_LR : 0.001        # learning rate for Critic network
         CRITIC_OBS_HIDDEN_1: 128 # Number of features of hidden layer 1 of Critic NN (observation branch)
-        CRITIC_ACT_HIDDEN_1: 64  # Number of features of hidden layer 1 of Critic NN (actions branch)
         CRITIC_HIDDEN_2: 64      # Number of features of hidden layer 2 of Critic NN (common branch)
         CRITIC_HIDDEN_3: 32      # Number of features of hidden layer 3 of Critic NN (common branch)
         SIGMA: 0.01              # noise generator sigma parameter

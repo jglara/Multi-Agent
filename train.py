@@ -34,7 +34,7 @@ def train_loop(brain_name, env, agent, n_episodes=2000, max_t=2000, goal=0.51, r
             actions = agent.act(states)
             env_info = env.step(actions)[brain_name]
             next_states = env_info.vector_observations         # get next state 
-            rewards = np.array(env_info.rewards)                         # get reward 
+            rewards = 10*np.array(env_info.rewards)                         # get reward 
             dones = np.array(env_info.local_done)
             agent.step(states, actions.reshape(num_agents, -1), rewards.reshape(num_agents, -1) , next_states, dones.reshape(num_agents, -1))
             
