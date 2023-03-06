@@ -35,6 +35,10 @@ The environment is considered solved, when the average (over 100 episodes) of th
 
 2. Place the file in this folder, and unzip (or decompress) the file. 
 
+3. Install dependencies with requirements.txt file
+
+python -m pip install -r requirements.txt.
+
 ### Instructions
 
 1. Run the train.py script:
