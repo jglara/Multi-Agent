@@ -1,8 +1,12 @@
+[//]: # (Image References)
+
+[image1]: https://user-images.githubusercontent.com/10624937/42135623-e770e354-7d12-11e8-998d-29fc74429ca2.gif "Trained Agent"
+
 # Introduction
 
 For this project, The goal is to train a pair of collobarating agents using the tennis environment, one of the Unity environments described here: [Tennis](https://github.com/Unity-Technologies/ml-agents/blob/master/docs/Learning-Environment-Examples.md#tennis) environment. 
 
-![Trained Agent][trained_agent.gif]
+![Trained Agent][image1]
 
 In this environment, two agents control rackets to bounce a ball over a net. If an agent hits the ball over the net, it receives a reward of +0.1.  If an agent lets a ball hit the ground or hits the ball out of bounds, it receives a reward of -0.01.  Thus, the goal of each agent is to keep the ball in play.
 
