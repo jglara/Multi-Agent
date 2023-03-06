@@ -9,6 +9,51 @@ from collections import deque
 
 import numpy as np
 
+
+class PrioritizedReplayBuffer(object):
+    def __init__(self, buffer_size, batch_size, device, prob_alpha=0.6):
+        self.prob_alpha = prob_alpha
+        self.batch_size = batch_size
+        self.device = device
+        self.memory     = deque(maxlen=buffer_size)
+        self.priorities = deque(maxlen=buffer_size)
+    
+    def add(self, s, a, r, sp, d):
+        max_prio = max(self.priorities) if len(self.priorities)>0 else 1.0
+        self.memory.append([s, a, r, sp, d])        
+        self.priorities.append(max_prio)
+    
+    def sample(self, beta=0.4):
+        probs  = np.array(self.priorities) ** self.prob_alpha
+        probs /= probs.sum()
+        
+        indices = np.random.choice(len(self.memory), self.batch_size, p=probs)
+        samples = [self.memory[idx] for idx in indices]
+        
+        total    = len(self.memory)
+        weights  = (total * probs[indices]) ** (-beta)
+        weights /= weights.max()
+
+        
+        s, a, r, s_prime, done = zip(*samples)
+        weights = tensor(weights).float().to(self.device)
+        states = tensor(np.array(s)).float().to(self.device)
+        actions = tensor(np.array(a)).float().to(self.device)
+        rewards = tensor(np.array(r)).float().to(self.device)
+        next_states = tensor(np.array(s_prime)).float().to(self.device)
+        dones = tensor(np.array(done)).float().to(self.device)
+        
+        return states, actions, rewards, next_states, dones, indices, weights
+    
+    def update_priorities(self, batch_indices, batch_priorities):
+        assert batch_indices.shape == (self.batch_size,)
+        assert batch_priorities.shape == (self.batch_size,)
+        for idx, prio in zip(batch_indices, batch_priorities):
+            self.priorities[idx] = prio
+
+    def __len__(self):
+        return len(self.memory)
+
 class ReplayBuffer:
     """Fixed-size buffer to store experience tuples."""
 
@@ -186,7 +231,7 @@ class DDPGAgent():
         return np.clip(actions, -1, 1)
 
 
-    def learn(self, all_local_actions, all_target_next_actions, all_states, all_actions, all_next_states, rewards, dones):
+    def learn(self, all_local_actions, all_target_next_actions, all_states, all_actions, all_next_states, rewards, dones, weights):
         """Update value parameters using batch of experiences
 
         """
@@ -194,7 +239,8 @@ class DDPGAgent():
 
         ## compute and minimize the critic loss
         target = rewards + gamma * self.critic_target(all_next_states, all_target_next_actions) * (1 - dones)
-        critic_loss = F.smooth_l1_loss(self.critic_local(all_states,all_actions), target.detach())
+        critic_loss_diff = F.mse_loss(self.critic_local(all_states,all_actions), target.detach(), reduction='none') * weights.unsqueeze(dim=1)
+        critic_loss = critic_loss_diff.mean()
         self.critic_optimizer.zero_grad()
         critic_loss.backward()
         # critic clipping gradiant
@@ -214,6 +260,8 @@ class DDPGAgent():
         self.soft_update(self.actor_local, self.actor_target, self.hparam["TAU"])
         self.soft_update(self.critic_local, self.critic_target, self.hparam["TAU"])
         self.train_steps += 1
+
+        return critic_loss_diff.squeeze().detach()
 
     def soft_update(self, local_model, target_model, tau):
         """Soft update model parameters.
@@ -237,7 +285,7 @@ class MADDPGAgent():
         self.hparam = hparam        
 
         # Replay memory
-        self.memory = ReplayBuffer(hparam["BUFFER_SIZE"], hparam["BATCH_SIZE"], device)
+        self.memory = PrioritizedReplayBuffer(hparam["BUFFER_SIZE"], hparam["BATCH_SIZE"], device)
 
 
     def setWriter(self, writer):
@@ -285,7 +333,7 @@ class MADDPGAgent():
         for j,agent in enumerate(self.agents):
             all_local_actions = []
             all_target_next_actions = []
-            all_states, all_actions, all_rewards, all_next_states, all_dones = self.memory.sample()
+            all_states, all_actions, all_rewards, all_next_states, all_dones, idxs, weights = self.memory.sample()
         
             for i,ag in enumerate(self.agents):            
                 local_actions = ag.actor_local(all_states[:,i])
@@ -295,5 +343,9 @@ class MADDPGAgent():
                 all_target_next_actions.append(target_next_actions)                        
 
             batch_size = self.hparam["BATCH_SIZE"]
-            agent.learn(torch.cat(all_local_actions, dim=1) , torch.cat(all_target_next_actions, dim=1),
-                        all_states.reshape(batch_size, -1), all_actions.reshape(batch_size, -1), all_next_states.reshape(batch_size, -1), all_rewards[:,j], all_dones[:,j])
+            new_weights = agent.learn(torch.cat(all_local_actions, dim=1) , torch.cat(all_target_next_actions, dim=1),
+                                      all_states.reshape(batch_size, -1), all_actions.reshape(batch_size, -1),
+                                      all_next_states.reshape(batch_size, -1), all_rewards[:,j], all_dones[:,j],
+                                      weights)
+            
+            self.memory.update_priorities(idxs, new_weights.cpu().numpy())
